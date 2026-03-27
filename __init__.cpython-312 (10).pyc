@@ -1,0 +1,149 @@
+# 🛡 AntiWorm
+
+> A standalone, cross-platform worm detection and quarantine tool — built as a focused alternative to bundled AV suites.
+
+![Python](https://img.shields.io/badge/Python-3.10+-blue) ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-green) ![License](https://img.shields.io/badge/License-MIT-yellow)
+
+---
+
+## Why AntiWorm?
+
+Most worm detection is buried inside general-purpose antivirus software. AntiWorm is purpose-built to detect, alert on, and quarantine computer worm behavior specifically — using a layered approach of signature matching, behavioral heuristics, and live network monitoring.
+
+---
+
+## Features
+
+| Feature | Description |
+|---|---|
+| 🔍 Signature Detection | Matches files against known worm byte patterns and SHA-256 hashes |
+| 🧠 Heuristic Analysis | Scores files on 30+ behavioral indicators (self-replication, persistence, obfuscation) |
+| 📡 Network Monitor | Watches live connections for worm-associated ports and rapid connection rates |
+| 🔒 Quarantine Vault | Safely isolates threats with full restore capability |
+| 📄 Report Generator | Exports findings as HTML, JSON, or TXT |
+
+---
+
+## Installation
+
+```bash
+git clone https://github.com/yourusername/antiworm.git
+cd antiworm
+pip install -r requirements.txt
+```
+
+---
+
+## Usage
+
+### Scan a directory
+```bash
+python main.py scan --path /home/user/downloads
+python main.py scan --path /home/user/downloads --deep --auto-quarantine
+```
+
+### Scan the full system
+```bash
+sudo python main.py scan --full-system --auto-quarantine
+```
+
+### Real-time network monitor
+```bash
+python main.py monitor --start
+```
+
+### Manage quarantine
+```bash
+python main.py quarantine --list
+python main.py quarantine --restore a1b2c3d4
+python main.py quarantine --delete a1b2c3d4
+python main.py quarantine --purge
+```
+
+### Generate a report
+```bash
+python main.py report --output my_report.html --format html
+python main.py report --output findings.json --format json
+```
+
+---
+
+## Detection Methods
+
+### 1. Signature-Based Detection
+- Compares file SHA-256 hashes against a known worm hash database
+- Scans file byte content for known worm patterns (autorun droppers, network share copy commands, SMTP mass-mailers, IRC C2 channels, etc.)
+- Flags dangerous double-extension masquerades (`.jpg.exe`, `.pdf.vbs`)
+
+### 2. Heuristic Behavioral Analysis
+Scores each file across 30+ rules covering:
+- **Self-replication**: `shutil.copy`, `os.system copy`, self-referencing `__file__`
+- **Network spreading**: raw socket use, SFTP libraries, IP range scanning
+- **Persistence**: Windows registry Run keys, cron jobs, shell startup files
+- **Obfuscation**: base64 decode + eval, high-entropy payloads, char-by-char string construction
+- **Combo rules**: flags files matching multiple suspicious patterns together
+
+### 3. Network Monitoring (requires psutil)
+- Detects connections to known worm-associated ports (SMB 445, IRC 6667, RDP 3389, Telnet 23, etc.)
+- Alerts on anomalous connection rates (potential active spreading)
+
+---
+
+## Project Structure
+
+```
+antiworm/
+├── main.py                  # CLI entry point
+├── requirements.txt
+├── core/
+│   └── engine.py            # Orchestration engine
+├── detectors/
+│   ├── signature.py         # Signature + hash matching
+│   ├── heuristic.py         # Behavioral scoring
+│   └── network.py           # Live network monitoring
+├── actions/
+│   └── quarantine.py        # Quarantine vault manager
+├── reports/
+│   └── generator.py         # HTML / JSON / TXT reports
+├── utils/
+│   ├── colors.py            # Terminal colors (cross-platform)
+│   ├── banner.py            # CLI banner
+│   └── logger.py            # File logging
+└── tests/
+    └── test_detectors.py    # Unit tests
+```
+
+---
+
+## Running Tests
+
+```bash
+python -m pytest tests/ -v
+```
+
+---
+
+## Ethical Use
+
+This tool is intended for:
+- Scanning systems **you own** or have **explicit permission** to test
+- Security research and education
+- Portfolio demonstration
+
+**Do not use this tool on systems without authorization.**
+
+---
+
+## Roadmap / Extension Ideas
+
+- [ ] Signature auto-update from a remote threat feed
+- [ ] YARA rule integration
+- [ ] SQLite-backed detection history
+- [ ] Scheduled scan via cron/Task Scheduler
+- [ ] Email/webhook alerting
+- [ ] Sandbox detonation for suspicious binaries
+
+---
+
+## License
+MIT — see LICENSE file.

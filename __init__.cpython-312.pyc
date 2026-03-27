@@ -1,0 +1,162 @@
+"""
+Signature Detector
+Matches files against known worm byte signatures and hashes.
+"""
+
+import os
+import hashlib
+from pathlib import Path
+
+
+# Known worm SHA256 hashes (sample — in production, load from a regularly updated signatures.db)
+KNOWN_WORM_HASHES = {
+    # Format: "sha256_hash": "worm_name"
+    # These are placeholder hashes for demonstration
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855": "EmptyFile.Worm.Test",
+    "44d88612fea8a8f36de82e1278abb02f": "EICAR.Worm.Test",  # MD5 of EICAR test string
+}
+
+# Dangerous byte signatures (hex patterns found in worm payloads)
+# Pattern: (hex_bytes, description, severity)
+WORM_BYTE_SIGNATURES = [
+    # Network self-propagation patterns
+    (b"REPLICATING_PAYLOAD", "Worm replication marker", "HIGH"),
+    (b"\x4d\x5a\x90\x00\x03\x00\x00\x00\x04\x00", "PE header with worm traits", "MEDIUM"),
+
+    # Common worm dropper strings
+    (b"net use \\\\", "Network share propagation attempt", "HIGH"),
+    (b"copy /y %0 \\\\", "Self-copy to network share", "HIGH"),
+    (b"\\\\%computername%\\", "Local share self-replication", "HIGH"),
+
+    # Autorun/USB spreading
+    (b"[autorun]", "AutoRun worm dropper", "HIGH"),
+    (b"autorun.inf", "AutoRun infection marker", "MEDIUM"),
+    (b"shell\\open\\command", "Shell command hijacking", "HIGH"),
+
+    # IRC/bot worm C2 commands
+    (b"JOIN #", "IRC botnet channel join", "MEDIUM"),
+    (b"PRIVMSG #", "IRC C2 command channel", "MEDIUM"),
+
+    # Email worm patterns
+    (b"smtp.sendmail", "SMTP self-mailing worm", "HIGH"),
+    (b"Outlook.Application", "Outlook worm automation", "HIGH"),
+    (b"mapi32.dll", "MAPI email propagation", "MEDIUM"),
+
+    # Mass-mailer patterns
+    (b"RCPT TO:", "Direct SMTP mass-mailer", "HIGH"),
+    (b"Content-Type: application/octet-stream", "Email attachment dropper", "LOW"),
+
+    # Python-based worm patterns
+    (b"import socket\nimport os\nimport shutil", "Python worm skeleton", "MEDIUM"),
+    (b"os.system('copy", "OS command self-copy", "HIGH"),
+
+    # Batch/script worm markers
+    (b"@echo off\ncopy %~f0", "Batch worm self-replication", "HIGH"),
+    (b"wscript.shell", "WScript propagation shell", "MEDIUM"),
+    (b"CreateObject(\"WScript.Shell\")", "WScript shell exploit", "MEDIUM"),
+]
+
+# File extensions commonly used by worms
+SUSPICIOUS_EXTENSIONS = {
+    ".vbs": "VBScript (common worm vector)",
+    ".vbe": "Encoded VBScript",
+    ".wsf": "Windows Script File",
+    ".wsh": "Windows Script Host",
+    ".bat": "Batch script (worm dropper)",
+    ".cmd": "Command script",
+    ".scr": "Screensaver (EXE masquerade)",
+    ".pif": "PIF file (EXE masquerade)",
+    ".com": "COM executable",
+}
+
+# Double extensions often used to trick users
+DOUBLE_EXTENSIONS = [
+    ".jpg.exe", ".pdf.exe", ".doc.exe", ".mp3.exe",
+    ".jpg.vbs", ".pdf.vbs", ".doc.vbs",
+    ".txt.bat", ".jpg.bat",
+]
+
+
+class SignatureDetector:
+    def __init__(self, max_file_size_mb: int = 50):
+        self.max_bytes = max_file_size_mb * 1024 * 1024
+
+    def scan(self, filepath: str) -> dict | None:
+        """
+        Scan a single file using signature matching.
+        Returns a threat dict if found, or None.
+        """
+        try:
+            filename = os.path.basename(filepath).lower()
+            file_size = os.path.getsize(filepath)
+
+            # --- Check double extensions ---
+            for dext in DOUBLE_EXTENSIONS:
+                if filepath.lower().endswith(dext):
+                    return {
+                        "type": "SIGNATURE",
+                        "description": f"Double extension masquerade: {dext}",
+                        "severity": "HIGH",
+                        "indicator": dext,
+                    }
+
+            # --- Check suspicious extensions ---
+            _, ext = os.path.splitext(filename)
+            if ext in SUSPICIOUS_EXTENSIONS:
+                # Don't flag ALL .bat files, only check content too
+                # But flag .scr and .pif always (almost always malicious)
+                if ext in (".scr", ".pif", ".vbe"):
+                    return {
+                        "type": "SIGNATURE",
+                        "description": f"High-risk file type: {SUSPICIOUS_EXTENSIONS[ext]}",
+                        "severity": "MEDIUM",
+                        "indicator": ext,
+                    }
+
+            # --- Skip large files for byte scanning ---
+            if file_size > self.max_bytes:
+                return None
+
+            # --- Hash check ---
+            file_hash = self._sha256(filepath)
+            if file_hash in KNOWN_WORM_HASHES:
+                worm_name = KNOWN_WORM_HASHES[file_hash]
+                return {
+                    "type": "SIGNATURE",
+                    "description": f"Known worm hash match: {worm_name}",
+                    "severity": "HIGH",
+                    "indicator": file_hash,
+                }
+
+            # --- Byte signature scan ---
+            with open(filepath, "rb") as f:
+                content = f.read()
+
+            for pattern, description, severity in WORM_BYTE_SIGNATURES:
+                if pattern in content:
+                    return {
+                        "type": "SIGNATURE",
+                        "description": description,
+                        "severity": severity,
+                        "indicator": repr(pattern[:20]),
+                    }
+
+        except (PermissionError, OSError, IsADirectoryError):
+            pass
+
+        return None
+
+    def _sha256(self, filepath: str) -> str:
+        sha256 = hashlib.sha256()
+        with open(filepath, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+
+    def add_signature(self, pattern: bytes, description: str, severity: str = "HIGH"):
+        """Allows runtime addition of new signatures."""
+        WORM_BYTE_SIGNATURES.append((pattern, description, severity))
+
+    def add_hash(self, sha256_hash: str, name: str):
+        """Allows runtime addition of known worm hashes."""
+        KNOWN_WORM_HASHES[sha256_hash] = name
